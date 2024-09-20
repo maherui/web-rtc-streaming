@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC Test</title>
+</head>
+<body>
+    <video id="video" autoplay></video>
+    <script>
+        const video = document.getElementById('video');
+        const signalingServerUrl = 'ws://localhost:3000';
+        const peerConnection = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        const socket = new WebSocket(signalingServerUrl);
+
+        socket.onmessage = async (message) => {
+            const signal = JSON.parse(message.data);
+            if (signal.offer) {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.offer));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                socket.send(JSON.stringify({ answer: answer }));
+            } else if (signal.answer) {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.answer));
+            } else if (signal.ice) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(signal.ice));
+            }
+        };
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.send(JSON.stringify({ ice: event.candidate }));
+            }
+        };
+
+        peerConnection.ontrack = (event) => {
+            video.srcObject = event.streams[0];
+        };
+
+        (async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.send(JSON.stringify({ offer: offer }));
+        })();
+    </script>
+</body>
+</html>
